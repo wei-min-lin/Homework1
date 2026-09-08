@@ -1,0 +1,13 @@
+---
+title: "Homework1"
+format: html
+editor: visual
+---
+
+## 
+
+This is the link to the repo : <https://github.com/wei-min-lin/Homework1.git>.
+
+# 
+
+#Q1 :
