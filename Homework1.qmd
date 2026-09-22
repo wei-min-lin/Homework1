@@ -1,13 +1,301 @@
 ---
-title: "Homework1"
-format: html
+title: "Homework 1"
+format:
+  html:
+    self-contained: true
+    code-fold: true
 editor: visual
 ---
-
-## 
-
 This is the link to the repo : <https://github.com/wei-min-lin/Homework1.git>.
 
-# 
+# Q1
 
-#Q1 : TEST again
+## a
+
+```{r}
+UCI <- read.csv('/Users/weimin/Documents/Class Materials/STATS 506 R/forty+soybean+cultivars+from+subsequent+harvests/data.csv')
+is.data.frame(UCI)
+```
+
+## b
+
+```{r}
+summary(UCI)
+length(table(UCI$Cultivar))
+table(UCI$Season)
+#summary(UCI) show that the total observation number are 320.
+#length(table(UCI$Cultivar)) shows that there are 40 distinct species.
+#table(UCI$Season) show that there are only two different seasons.
+```
+
+##c
+
+```{r}
+# install.packages("dplyr")
+library(dplyr)
+# variable define
+UCI <- UCI %>%
+  rename(
+    plant_height = PH,
+    grain_yield = GY,
+    season = Season
+  )
+# Calculate correlation
+
+UCI %>%
+   summarise(
+    correlation = cor(
+      plant_height,
+      grain_yield
+    )
+  )
+
+
+# Calculate correlation (by season)
+UCI %>%
+  group_by(season) %>%
+  summarise(
+    correlation = cor(
+      plant_height,
+      grain_yield
+    )
+  )
+
+
+# 3. What is the grain yield of the soybean observation with the greatest plant height?
+
+
+UCI$grain_yield[which.max(UCI$plant_height)]
+
+
+# 4. What percentage of observations have a thousand seed weight (MHG) greater than the overall average thousand seed weight?
+
+table(UCI$MHG > mean(UCI$MHG))
+151 / (151+169)
+
+
+# 5. Which cultivar has the highest average grain yield?
+
+which.max(tapply(UCI$grain_yield, UCI$Cultivar, mean))
+```
+
+### (1.)
+
+The correlation between plant height and grain yield is 0.1233
+
+### (2.)
+
+The higher correlation season is Season 1.
+
+Season 1's correlation : 0.2309
+
+Season 2's correlation : -0.0227
+
+### (3.)
+
+3304.678
+
+### (4.)
+
+47.19%
+
+### (5.)
+
+98R30 CE 
+        
+## d
+
+```{r}
+numbers <- UCI[sapply(UCI,is.numeric)]
+
+
+overall <- c("Overall", colMeans(numbers, na.rm = TRUE))
+Season <- aggregate(numbers, by = list(UCI$season), mean, na.rm = TRUE)
+
+A = rbind(overall, Season)
+A
+```
+
+## e
+
+```{r}
+t.test(grain_yield ~ season, data = UCI)
+```
+
+Since the p-value is greater than 0.05, we fail to reject the null hypothesis. Therefore, there is not sufficient evidence to conclude that the mean grain yield differs between the two seasons.
+
+The 95% confidence interval for the difference in means is (-91.157, 130.752), which includes 0, further supporting the conclusion that there is no statistically significant difference between the two seasons.
+
+
+# Q2
+
+## a
+
+```{r}
+# 1. Import data
+adult <- read.csv('/Users/weimin/Documents/Class Materials/STATS 506 R/adult/adult.data',
+                  header = FALSE,
+                  strip.white = TRUE,
+                  na.strings = "?")
+```
+
+## b
+
+```{r}
+# 2. Variable names
+names(adult) <- c(
+  "age", "workclass", "fnlwgt", "education", "education_num",
+  "marital_status", "occupation", "relationship", "race", "sex",
+  "capital_gain", "capital_loss", "hours_per_week",
+  "native_country", "income"
+)
+```
+
+
+## c
+
+```{r}
+colSums(is.na(adult))
+```
+There are 1836 missing value in workclass, 1843 in occupation, and 583 in native_country
+
+## d
+```{r}
+adult <- adult[adult$hours_per_week >= 10,]
+```
+
+It had 32561 before filtered, and it has 32103 after filtered.
+
+## e
+```{r}
+adult <- adult[
+  !is.na(adult$occupation) &
+  !is.na(adult$workclass) &
+  !is.na(adult$native_country), ]
+head(adult)
+```
+
+Observations with missing occupation, workclass, or native country were removed because these observations do not contain complete information for these categorical variables.
+
+## f
+```{r}
+adult <- adult[adult$age >= 18 & adult$age <= 90 & adult$education != "Preschool",]
+```
+
+## g
+```{r}
+nrow(adult)
+```
+
+The final sample size is 29523.
+
+# Q3
+## a
+
+```{r}
+nextHappy <- function(n) {
+
+  if (!is.numeric(n) || length(n) != 1 || is.na(n) ||
+      !is.finite(n) || n <= 0 || n %% 1 != 0) {
+    stop("n must be a positive integer.")
+  }
+
+  digits <- as.numeric(strsplit(as.character(n), "")[[1]])
+  sum(digits^2)
+}
+
+nextHappy(82)
+```
+
+
+## b
+
+```{r}
+happySequence <- function(n) {
+  # Check input
+  if (!is.numeric(n) || length(n) != 1 || is.na(n) ||
+      !is.finite(n) || n <= 0 || n %% 1 != 0) {
+    stop("n must be a positive integer.")
+  }
+
+  sequence <- n
+  seen <- numeric(0)
+
+  while (TRUE) {
+    current <- tail(sequence, 1)
+
+    # Happy number
+    if (current == 1) {
+      return(list(
+        sequence = sequence,
+        isHappy = TRUE
+      ))
+    }
+
+    # Cycle detected
+    if (current %in% seen) {
+      return(list(
+        sequence = sequence,
+        isHappy = FALSE
+      ))
+    }
+
+    seen <- c(seen, current)
+    sequence <- c(sequence, nextHappy(current))
+  }
+}
+
+happySequence(4)
+
+happySequence(19)
+```
+## c
+
+### a
+
+```{r}
+results <- lapply(1:1000, happySequence)
+
+isHappy <- sapply(results, function(x) x$isHappy)
+
+numHappy <- sum(isHappy)
+numHappy
+```
+
+143
+
+### b
+
+```{r}
+percentHappy <- mean(isHappy) * 100
+percentHappy
+```
+
+14.3%
+
+
+### c
+```{r}
+sequenceLength <- sapply(
+  results,
+  function(x) {
+    if (x$isHappy) {
+      length(x$sequence)
+    } else {
+      NA
+    }
+  }
+)
+
+maxLength <- max(sequenceLength, na.rm = TRUE)
+maxLength
+
+longest <- which(sequenceLength == maxLength)
+longest
+```
+
+The longest happy sequence is 7, and it produced by 21 starting values.
+
+356 365 379 397 469 496 536 563 635 649 653 694 739 793 899 937 946 964 973 989 998
+
+
