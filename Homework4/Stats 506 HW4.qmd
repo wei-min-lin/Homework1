@@ -1,0 +1,335 @@
+---
+title: "STATS 506 Homework4"
+author: "Wei Min Lin"
+format:
+  pdf:
+    pdf-engine: xelatex
+    documentclass: article
+    fontsize: 10pt
+    geometry: margin=0.8in
+    colorlinks: true
+  html:
+    embed-resources: true
+    code-fold: false
+    toc: true
+number-sections: false
+execute:
+  echo: true
+  warning: true
+  message: false
+editor: source
+---
+
+This is the git link : https://github.com/wei-min-lin/Homework1/tree/main/Homework2
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(knitr)
+
+dir.create("data", showWarnings = FALSE)
+urls <- c(
+  "nzge.rds" = "https://phuongov.github.io/stats506-f26/data_f26/nzge.rds",
+  "atp_matches_2019.csv" = "https://raw.githubusercontent.com/azhou5849/tennis-atp-sackmann-data/master/atp_matches_2019.csv",
+  "us-states.csv" = "https://raw.githubusercontent.com/nytimes/covid-19-data/refs/heads/master/rolling-averages/us-states.csv"
+)
+for (filename in names(urls)) {
+  destination <- file.path("data", filename)
+  if (!file.exists(destination)) {
+    download.file(urls[[filename]], destination, mode = "wb", quiet = TRUE)
+  }
+}
+
+# Data loading
+nzge <- readRDS("data/nzge.rds")
+tennis <- read.csv("data/atp_matches_2019.csv")
+covid <- read.csv("data/us-states.csv") |>
+  mutate(date = as.Date(date)) |>
+  filter(state %in% state.name) |>
+  arrange(state, date)
+
+theme_set(theme_minimal(base_size = 12))
+theme_update(panel.grid.minor = element_blank(),
+             plot.title = element_text(face = "bold"),
+             legend.position = "bottom")
+
+```
+
+## Problem 1(a)
+
+
+
+```{r}
+votes_by_year <- nzge |>
+  group_by(election_year, voting_type) |>
+  summarise(votes = sum(votes, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(votes))
+kable(votes_by_year)
+
+```
+
+## Problem 1(b)
+
+Percentages use all recorded Candidate votes as the denominator. Informal votes are shown explicitly; they are not a political party.
+
+```{r}
+# Informal votes are shown explicitly and are not interpreted as a political party.
+candidate_2014 <- nzge |>
+  filter(election_year == 2014, voting_type == "Candidate") |>
+  group_by(party) |>
+  summarise(votes = sum(votes, na.rm = TRUE), .groups = "drop") |>
+  mutate(percent = 100 * votes / sum(votes)) |>
+  arrange(desc(percent))
+kable(candidate_2014, digits = 2)
+
+```
+
+## Problem 1(c)
+
+The winner is the party with the greatest national vote total for each vote type, not necessarily the most seats.
+
+```{r}
+election_winners <- nzge |>
+  filter(!grepl("^Informal", party)) |>
+  group_by(election_year, voting_type, party) |>
+  summarise(votes = sum(votes, na.rm = TRUE), .groups = "drop") |>
+  group_by(election_year, voting_type) |>
+  slice_max(votes, n = 1, with_ties = TRUE) |>
+  ungroup() |>
+  group_by(election_year) |>
+  summarise(
+    Candidate = paste(party[voting_type == "Candidate"], collapse = "; "),
+    Party = paste(party[voting_type == "Party"], collapse = "; "),
+    .groups = "drop"
+  ) |>
+  arrange(election_year)
+kable(election_winners)
+
+```
+
+## Problem 2(a)
+
+A tournament is defined by a distinct `tourney_id`, including Davis Cup ties.
+
+```{r}
+tournament_count <- tennis |>
+  summarise(tournaments = n_distinct(tourney_id))
+kable(tournament_count)
+cat(sprintf("The dataset contains %d distinct tournament IDs, including Davis Cup ties.\n",
+            tournament_count$tournaments))
+
+```
+
+## Problem 2(b)
+
+Individual singles titles are identified by final-round wins; Davis Cup team ties are excluded.
+
+```{r}
+titles <- tennis |>
+  filter(round == "F", tourney_level != "D") |>
+  distinct(tourney_id, winner_id, winner_name) |>
+  count(winner_id, winner_name, name = "titles", sort = TRUE)
+multiple_titles <- titles |> filter(titles > 1)
+top_champions <- titles |> slice_max(titles, n = 1, with_ties = TRUE)
+kable(multiple_titles)
+kable(top_champions)
+cat(sprintf("%d players won more than one singles tournament. %s each won %d titles.\n",
+            nrow(multiple_titles), paste(top_champions$winner_name, collapse = " and "),
+            max(titles$titles)))
+
+```
+
+## Problem 2(c)
+
+This is a descriptive comparison of winner and loser ace counts within the same match. No hypothesis test is used.
+
+```{r}
+ace_pairs <- tennis |>
+  filter(!is.na(w_ace), !is.na(l_ace)) |>
+  mutate(difference = w_ace - l_ace)
+ace_summary <- ace_pairs |>
+  summarise(
+    complete_matches = n(),
+    winner_mean = mean(w_ace), loser_mean = mean(l_ace),
+    mean_difference = mean(difference), median_difference = median(difference),
+    winner_more_percent = 100 * mean(difference > 0),
+    equal_percent = 100 * mean(difference == 0),
+    loser_more_percent = 100 * mean(difference < 0)
+  )
+kable(ace_summary, digits = 2)
+cat(sprintf(paste0("In %d complete pairs, winners averaged %.2f aces and losers %.2f; ",
+                   "the mean paired difference was %.2f. Winners had more aces in %.1f%% ",
+                   "of matches. This is descriptive evidence of an association, not ",
+                   "a causal conclusion or a formal significance test. %d matches ",
+                   "with missing ace statistics were excluded.\n"),
+            nrow(ace_pairs), ace_summary$winner_mean, ace_summary$loser_mean,
+            ace_summary$mean_difference, ace_summary$winner_more_percent,
+            nrow(tennis) - nrow(ace_pairs)))
+
+```
+
+## Problem 2(d)
+
+
+
+```{r}
+player_records <- bind_rows(
+  tennis |> transmute(player_id = winner_id, player = winner_name, win = 1L),
+  tennis |> transmute(player_id = loser_id, player = loser_name, win = 0L)
+) |>
+  group_by(player_id) |>
+  summarise(player = first(player), matches = n(), wins = sum(win),
+            .groups = "drop") |>
+  filter(matches >= 5) |>
+  mutate(win_rate = wins / matches)
+best_players <- player_records |> slice_max(win_rate, n = 1, with_ties = TRUE)
+kable(best_players |> mutate(win_percent = 100 * win_rate) |> select(-win_rate),
+      digits = 2)
+cat(sprintf("Among players with at least five matches, %s had the highest win rate: %.2f%%.\n",
+            paste(best_players$player, collapse = "; "),
+            100 * max(best_players$win_rate)))
+
+```
+
+## Problem 3(a)
+
+Only the 50 states are included. Major and minor peaks are operational definitions, not official epidemiological classifications.
+
+```{r}
+#' Identify separated local peaks in a smoothed daily series.
+#' @param y Numeric daily values, including possible NA edge values.
+#' @param window Days examined on either side of each candidate peak.
+#' @param minimum Minimum peak height.
+#' @param separation Minimum distance in days between accepted peaks.
+#' @return Integer indices of accepted peaks in chronological order.
+find_peaks <- function(y, window = 30L, minimum = 20000, separation = 60L) {
+  candidates <- integer()
+  for (i in seq.int(window + 1L, length(y) - window)) {
+    neighborhood <- y[(i - window):(i + window)]
+    if (!anyNA(neighborhood) && y[i] >= minimum &&
+        y[i] == max(neighborhood)) candidates <- c(candidates, i)
+  }
+  accepted <- integer()
+  for (i in candidates[order(y[candidates], decreasing = TRUE)]) {
+    if (all(abs(i - accepted) >= separation)) accepted <- c(accepted, i)
+  }
+  sort(accepted)
+}
+
+national <- covid |>
+  group_by(date) |>
+  summarise(cases_avg = sum(cases_avg, na.rm = TRUE), .groups = "drop") |>
+  arrange(date) |>
+  mutate(smooth = as.numeric(stats::filter(cases_avg, rep(1 / 21, 21), sides = 2)))
+peaks <- national |>
+  slice(find_peaks(smooth)) |>
+  mutate(type = if_else(smooth >= 100000, "Major", "Minor"))
+kable(peaks |> select(date, smooth, type), digits = 0)
+p3a <- ggplot(national, aes(date, smooth)) +
+  geom_line(color = "#334155", linewidth = 0.7, na.rm = TRUE) +
+  geom_point(data = peaks, aes(color = type), size = 2.8) +
+  geom_text(data = peaks, aes(label = format(date, "%b %Y")),
+            vjust = -0.8, size = 3, check_overlap = TRUE) +
+  scale_color_manual(values = c(Major = "#D55E00", Minor = "#0072B2")) +
+  scale_y_continuous(labels = scales::label_comma(),
+                     expand = expansion(mult = c(0.02, 0.15))) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
+  labs(title = "Waves of reported COVID-19 cases in the 50 states",
+       subtitle = "NYT seven-day averages, smoothed with a centered 21-day mean",
+       x = NULL, y = "Reported cases per day", color = "Peak class",
+       caption = "Source: The New York Times. Major >=100,000; minor 20,000-99,999.\nLocal maxima within +/-30 days; peaks separated by >=60 days.")
+print(p3a)
+cat(sprintf("Under this operational definition, the plot contains %d major and %d minor peaks. Counts depend on the smoothing and thresholds; incomplete edge windows are excluded.\n",
+            sum(peaks$type == "Major"), sum(peaks$type == "Minor")))
+
+```
+
+## Problem 3(b)
+
+Overall rate means average daily reported cases per 100,000 over the common observation period. Equal observation periods make these rates comparable.
+
+```{r}
+coverage <- covid |>
+  group_by(state) |>
+  summarise(first_day = min(date), last_day = max(date), .groups = "drop")
+common_start <- max(coverage$first_day)
+common_end <- min(coverage$last_day)
+common <- covid |> filter(date >= common_start, date <= common_end)
+state_rates <- common |>
+  group_by(state) |>
+  summarise(overall_rate = mean(cases_avg_per_100k), .groups = "drop")
+extreme_states <- bind_rows(
+  state_rates |> slice_max(overall_rate, n = 1, with_ties = TRUE) |> mutate(group = "Highest"),
+  state_rates |> slice_min(overall_rate, n = 1, with_ties = TRUE) |> mutate(group = "Lowest")
+)
+kable(extreme_states, digits = 2)
+comparison <- common |> semi_join(extreme_states, by = "state")
+p3b <- ggplot(comparison, aes(date, cases_avg_per_100k, color = state)) +
+  geom_line(linewidth = 0.65) +
+  scale_color_manual(values = c("#0072B2", "#D55E00")) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
+  labs(title = "States with the highest and lowest overall reported incidence",
+       subtitle = paste("Common observation period:", common_start, "to", common_end),
+       x = NULL, y = "Daily cases per 100,000 (7-day average)", color = "State",
+       caption = "Source: The New York Times. Overall rate = mean daily 7-day incidence.\nReported cases depend on testing and reporting practices.")
+print(p3b)
+trajectory_summary <- comparison |>
+  group_by(state) |>
+  summarise(
+    peak_rate = max(cases_avg_per_100k),
+    peak_date = date[which.max(cases_avg_per_100k)],
+    days_above_50 = sum(cases_avg_per_100k >= 50), .groups = "drop"
+  )
+kable(trajectory_summary, digits = 2)
+cat(sprintf("%s had the highest overall rate and %s the lowest.\n",
+            paste(extreme_states$state[extreme_states$group == "Highest"], collapse = "; "),
+            paste(extreme_states$state[extreme_states$group == "Lowest"], collapse = "; ")))
+cat(paste(sprintf("%s peaked at %.2f daily cases per 100,000 on %s and spent %d days at or above 50.",
+                  trajectory_summary$state, trajectory_summary$peak_rate,
+                  trajectory_summary$peak_date, trajectory_summary$days_above_50),
+          collapse = " "),
+    "The higher-rate state had a much taller peak and a longer period of high incidence; the peaks also occurred at different times.\n")
+
+```
+
+## Problem 3(c)
+
+Substantial incidence means at least one daily reported case per 100,000 (7-day average) for seven consecutive days. Ties at fifth place are retained.
+
+```{r}
+#| fig-height: 7
+early <- covid |>
+  filter(date <= as.Date("2020-05-31")) |>
+  group_by(state) |>
+  arrange(date, .by_group = TRUE) |>
+  mutate(sustained = as.numeric(stats::filter(
+    as.integer(cases_avg_per_100k >= 1), rep(1, 7), sides = 1
+  )) == 7) |>
+  ungroup()
+onsets <- early |>
+  filter(sustained) |>
+  group_by(state) |>
+  summarise(onset = min(date) - 6, .groups = "drop") |>
+  arrange(onset, state)
+first_states <- onsets |> slice_min(onset, n = 5, with_ties = TRUE)
+kable(first_states)
+p3c <- early |>
+  semi_join(first_states, by = "state") |>
+  ggplot(aes(date, cases_avg_per_100k)) +
+  geom_line(color = "#0072B2", linewidth = 0.7) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "#D55E00") +
+  geom_vline(data = first_states, aes(xintercept = onset),
+             linetype = "dotted", color = "#555555") +
+  facet_wrap(~state, ncol = 2) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  labs(title = "Early sustained COVID-19 outbreaks",
+       subtitle = "First five states; any ties at fifth place are retained",
+       x = "2020", y = "Daily cases per 100,000 (7-day average)",
+       caption = "Source: The New York Times. Dashed line: 1 case per 100,000.\nDotted lines: start of the first 7-day run at or above that threshold.")
+print(p3c)
+cat(sprintf("Using the stated threshold, the earliest states were %s. These are dates of sustained reported incidence, not dates of first infection.\n",
+            paste(first_states$state, collapse = ", ")))
+```
+
+
